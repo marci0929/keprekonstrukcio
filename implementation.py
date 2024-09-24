@@ -1,4 +1,5 @@
 import numpy
+import numpy as np
 from algotom.io.loadersaver import load_image
 from algotom.util.simulation import make_sinogram
 from algotom.rec.reconstruction import fbp_reconstruction
@@ -17,10 +18,9 @@ def get_MSE_from_images(img1, img2):
     return mean_absolute_error(img1, img2)
 
 
-def make_reconstructed_image(projection_number, original_image):
-    angles = make_angle_list(projection_number)
-    sinogram = make_sinogram(original_image, angles)
-    return fbp_reconstruction(sinogram, original_image.shape[0] / 2, angles, apply_log=False, gpu=False)
+def make_reconstructed_image(image, projection_angles):
+    sinogram = make_sinogram(image, projection_angles)
+    return fbp_reconstruction(sinogram, image.shape[0] / 2, projection_angles, apply_log=False, gpu=False)
 
 
 def save_image(path, image):
@@ -39,6 +39,12 @@ def print_progress(progress):
 # c ---- d
 def check_if_switching_component(a, b, c, d):
     return a == d and c == b and a != b
+
+
+def get_normalized_angle_from_2_coordinates(coord1, coord2):
+    delta_x = abs(coord1[0] - coord2[0])
+    delta_y = abs(coord1[1] - coord2[1])
+    return math.atan2(delta_y, delta_x)
 
 
 def get_search_box_values(image, values_list, x_offset, y_offset):
@@ -89,7 +95,7 @@ def test_reconstruction(image):
     progress = 1
 
     for projection_count in test_projections:
-        reconstructed = make_reconstructed_image(projection_count, image)
+        reconstructed = make_reconstructed_image(image, make_angle_list(projection_count))
         save_image("./reconstructed/recon_image_" + str(projection_count) + ".png", reconstructed)
         MSE_list.append(get_MSE_from_images(image, reconstructed))
 
@@ -100,7 +106,35 @@ def test_reconstruction(image):
     plt.show()
 
 
-original_image = cv2.imread("./sample_pictures/switching_1.png", flags=cv2.IMREAD_GRAYSCALE)
+original_image = cv2.imread("./sample_pictures/switching_2.png", flags=cv2.IMREAD_GRAYSCALE)
 # test_reconstruction(original_image)
 components = get_list_of_switching_components(original_image)
-print(components)
+
+angles = []
+for comp in components:
+    normalized_angle = get_normalized_angle_from_2_coordinates(comp[0], comp[1])
+    angles.append(normalized_angle)
+    angles.append(normalized_angle + (math.pi / 2))
+
+angles.append(0.0)
+angles.append(math.pi / 2)
+angles = list(set(angles))
+angles.sort()
+
+angle_idx = 1
+while angle_idx < len(angles):
+    if abs(angles[angle_idx] - angles[angle_idx - 1]) < angles[angle_idx] * 0.1:
+        angles.pop(angle_idx)
+
+    angle_idx += 1
+
+angles = np.array(angles)
+
+print("total projections: " + str(len(angles)))
+
+reconstructed_img = make_reconstructed_image(original_image, angles)
+save_image("./reconstructed/recon_image_improved.png", reconstructed_img)
+
+angle_list = make_angle_list(159)
+reconstructed_img = make_reconstructed_image(original_image, angle_list)
+save_image("./reconstructed/recon_image_" + str(159) + ".png", reconstructed_img)
