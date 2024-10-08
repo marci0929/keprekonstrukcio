@@ -1,9 +1,6 @@
 import numpy
-import numpy as np
-from algotom.io.loadersaver import load_image
 from algotom.util.simulation import make_sinogram
 from algotom.rec.reconstruction import fbp_reconstruction
-import algotom.io.loadersaver as losa
 from sklearn.metrics import mean_absolute_error
 import matplotlib.pyplot as plt
 import math
@@ -15,7 +12,7 @@ def make_angle_list(number_of_projections):
     return numpy.linspace(0, math.pi, number_of_projections + 1)[:-1]
 
 
-def get_MSE_from_images(img1, img2):
+def get_mse_from_images(img1, img2):
     return mean_absolute_error(img1, img2)
 
 
@@ -93,18 +90,18 @@ def get_list_of_switching_components(image):
 
 def test_reconstruction(image):
     test_projections = [180, 160, 140, 120, 100, 80, 60, 40, 30, 20, 10, 5]
-    MAE_list = []
+    mae_list = []
     progress = 1
 
     for projection_count in test_projections:
         reconstructed = make_reconstructed_image(image, make_angle_list(projection_count))
         save_image("./reconstructed/recon_image_" + str(projection_count) + ".png", reconstructed)
-        MAE_list.append(get_MSE_from_images(image, reconstructed))
+        mae_list.append(get_mse_from_images(image, reconstructed))
 
         print_progress(progress)
         progress += 1
 
-    plt.plot(test_projections, MAE_list)
+    plt.plot(test_projections, mae_list)
     plt.show()
 
 
@@ -119,10 +116,48 @@ def get_counter_from_vector(angle_list):
 
 
 def add_rounded_angle(angle_list, new_angle):
-    rounded_angle = round(new_angle, ndigits=2)
-    if not any(angle + 0.01 >= new_angle >= angle - 0.01 for angle in angle_list):
-        angle_list.append(rounded_angle)
+    rounded_angle = round(new_angle, ndigits=4)
+    # if not any(angle + 0.01 >= new_angle >= angle - 0.01 for angle in angle_list):
+    #     angle_list.append(rounded_angle)
+    angle_list.append(rounded_angle)
 
+def get_noisiness_of_signal(sinogram_row):
+    noise_value = 0
+    for value_idx in range(1, len(sinogram_row)):
+        noise_value += abs(sinogram_row[value_idx] - sinogram_row[value_idx - 1])
+
+    return noise_value
+
+def get_noisiness_of_sinogram(sinogram):
+    row_count = 0
+    row_noise = {}
+    for sinogram_row in sinogram:
+        row_noise[row_count] = get_noisiness_of_signal(sinogram_row)
+        row_count += 1
+
+    return row_noise
+
+def get_improved_sinogram_based_on_noise(sinogram, sinogram_variance):
+    # Get the 50 highest noise sinogram rows
+    sorted_row_variances = {key: sinogram_variance[key] for key in sorted(sinogram_variance, key=sinogram_variance.get, reverse=True)[:50]}
+    new_sinogram =  numpy.array(sinogram[0])
+    new_angles = []
+
+    # Append the rows of the original sinogram which has the most noise
+    for angle in sorted_row_variances:
+        new_sinogram = numpy.vstack((sinogram[angle], new_sinogram))
+        new_angles.insert(0, math.radians(angle))
+
+    # Delete the first dummy row
+    new_sinogram = numpy.delete(new_sinogram, len(new_sinogram)-1, 0)
+    return new_sinogram, new_angles
+
+def noisiness_based_reconstruction(image):
+    sinogram = make_sinogram(image, make_angle_list(360))
+    sinogram_variance = get_noisiness_of_sinogram(sinogram)
+    improved_sinogram, reduced_angles = get_improved_sinogram_based_on_noise(sinogram, sinogram_variance)
+    fbp_reconstructed = fbp_reconstruction(improved_sinogram, image.shape[0] / 2, reduced_angles, apply_log=False, gpu=False)
+    return cv2.threshold(fbp_reconstructed, 127, 255, cv2.THRESH_BINARY)[1]
 
 def test_optimized_reconstruction(image):
     components = get_list_of_switching_components(image)
@@ -130,16 +165,18 @@ def test_optimized_reconstruction(image):
     angles = []
     for comp in components:
         normalized_angle_1 = get_normalized_angle_from_2_coordinates(comp[0], comp[1])
-        # Get the other 2 coordinates of the switching component as: (x, y + y_offset) and (x + x_offset, y)
-        normalized_angle_2 = math.pi - normalized_angle_1
-
         add_rounded_angle(angles, normalized_angle_1)
-        add_rounded_angle(angles, normalized_angle_2)
 
     counter_set = get_counter_from_vector(angles)
+
+    # Get the most used angles
     most_common = counter_set.most_common(20)
 
-    reduced_angles = [angle[0] for angle in most_common]
+    # Get the angle, the first component contains the number of them
+    reduced_angles = [float(angle[0]) for angle in most_common]
+    # Add the projections from the other side too
+    other_projections = [math.pi - angle for angle in reduced_angles]
+    reduced_angles.extend(other_projections)
 
     add_trivial_angles(reduced_angles)
 
@@ -148,11 +185,19 @@ def test_optimized_reconstruction(image):
     reconstructed_img = make_reconstructed_image(image, reduced_angles)
     save_image("./reconstructed/recon_image_improved.png", reconstructed_img)
 
-    angle_list = make_angle_list(16)
+    angle_list = make_angle_list(50)
     reconstructed_img = make_reconstructed_image(image, angle_list)
     save_image("./reconstructed/recon_image_reference.png", reconstructed_img)
 
+def test_optimization_with_noisiness(image):
+    reconstructed_img = noisiness_based_reconstruction(image)
+    save_image("./reconstructed/recon_image_noisy_improved.png", reconstructed_img)
 
-original_image = cv2.imread("./sample_pictures/batman_bin_lowres.png", flags=cv2.IMREAD_GRAYSCALE)
+    angle_list = make_angle_list(50)
+    reconstructed_img = make_reconstructed_image(image, angle_list)
+    save_image("./reconstructed/recon_image_noisy_reference.png", reconstructed_img)
+
+original_image = cv2.imread("./sample_pictures/sb_hires_rect.png", flags=cv2.IMREAD_GRAYSCALE)
 # test_reconstruction(original_image)
-test_optimized_reconstruction(original_image)
+# test_optimized_reconstruction(original_image)
+test_optimization_with_noisiness(original_image)
