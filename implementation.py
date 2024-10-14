@@ -1,4 +1,4 @@
-import numpy
+import numpy as np
 from algotom.util.simulation import make_sinogram
 from algotom.rec.reconstruction import fbp_reconstruction
 from sklearn.metrics import mean_absolute_error
@@ -9,11 +9,11 @@ from collections import Counter
 
 
 def make_angle_list(number_of_projections):
-    return numpy.linspace(0, math.pi, number_of_projections + 1)[:-1]
+    return np.linspace(0, math.pi, number_of_projections + 1)[:-1]
 
 
-def get_mse_from_images(img1, img2):
-    return mean_absolute_error(img1, img2)
+def get_mse_from_images(orig, rec):
+    return np.count_nonzero(rec - orig) / np.count_nonzero(orig)
 
 
 def make_reconstructed_image(image, projection_angles):
@@ -121,12 +121,14 @@ def add_rounded_angle(angle_list, new_angle):
     #     angle_list.append(rounded_angle)
     angle_list.append(rounded_angle)
 
+
 def get_noisiness_of_signal(sinogram_row):
     noise_value = 0
     for value_idx in range(1, len(sinogram_row)):
         noise_value += abs(sinogram_row[value_idx] - sinogram_row[value_idx - 1])
 
     return noise_value
+
 
 def get_noisiness_of_sinogram(sinogram):
     row_count = 0
@@ -137,67 +139,133 @@ def get_noisiness_of_sinogram(sinogram):
 
     return row_noise
 
+
 def get_improved_sinogram_based_on_noise(sinogram, sinogram_variance):
     # Get the 50 highest noise sinogram rows
-    sorted_row_variances = {key: sinogram_variance[key] for key in sorted(sinogram_variance, key=sinogram_variance.get, reverse=True)[:50]}
-    new_sinogram =  numpy.array(sinogram[0])
+    sorted_row_variances = {key: sinogram_variance[key] for key in
+                            sorted(sinogram_variance, key=sinogram_variance.get, reverse=True)[:50]}
+    new_sinogram = np.array(sinogram[0])
     new_angles = []
 
     # Append the rows of the original sinogram which has the most noise
     for angle in sorted_row_variances:
-        new_sinogram = numpy.vstack((sinogram[angle], new_sinogram))
+        new_sinogram = np.vstack((sinogram[angle], new_sinogram))
         new_angles.insert(0, math.radians(angle))
 
     # Delete the first dummy row
-    new_sinogram = numpy.delete(new_sinogram, len(new_sinogram)-1, 0)
+    new_sinogram = np.delete(new_sinogram, len(new_sinogram) - 1, 0)
     return new_sinogram, new_angles
+
 
 def noisiness_based_reconstruction(image):
     sinogram = make_sinogram(image, make_angle_list(360))
     sinogram_variance = get_noisiness_of_sinogram(sinogram)
     improved_sinogram, reduced_angles = get_improved_sinogram_based_on_noise(sinogram, sinogram_variance)
-    fbp_reconstructed = fbp_reconstruction(improved_sinogram, image.shape[0] / 2, reduced_angles, apply_log=False, gpu=False)
+    fbp_reconstructed = fbp_reconstruction(improved_sinogram, image.shape[0] / 2, reduced_angles, apply_log=False,
+                                           gpu=False)
     return cv2.threshold(fbp_reconstructed, 127, 255, cv2.THRESH_BINARY)[1]
 
+
+# def test_optimization_with_noisiness(image):
+#     reconstructed_img = noisiness_based_reconstruction(image)
+#     save_image("./reconstructed/recon_image_noisy_improved.png", reconstructed_img)
+#
+#     angle_list = make_angle_list(50)
+#     reconstructed_img = make_reconstructed_image(image, angle_list)
+#     save_image("./reconstructed/recon_image_noisy_reference.png", reconstructed_img)
+
 def test_optimized_reconstruction(image):
-    components = get_list_of_switching_components(image)
+    start_projection_count = 60  # number of projections
+    projection_list_number = 100  # Number of generated random projections
+    max_error_limit = 1  # Error limit, which needs to be achieved
+    optimization_step_size = 0.000174532925  # 0.01 degree in radians
 
-    angles = []
-    for comp in components:
-        normalized_angle_1 = get_normalized_angle_from_2_coordinates(comp[0], comp[1])
-        add_rounded_angle(angles, normalized_angle_1)
+    continue_optimization = True
+    best_projection_error = -1
+    best_projection = []
+    number_of_projections = start_projection_count
 
-    counter_set = get_counter_from_vector(angles)
+    while continue_optimization:
+        random_projections = np.random.uniform(0, math.pi, (number_of_projections, projection_list_number))
+        print("Testing " + str(number_of_projections) + " number of projections.\n")
+        print("Current best error: " + str(best_projection_error))
 
-    # Get the most used angles
-    most_common = counter_set.most_common(20)
+        # Testing the random projections, and selecting the best
+        for projection in random_projections:
+            error = get_mse_from_images(image, make_reconstructed_image(image, projection))
 
-    # Get the angle, the first component contains the number of them
-    reduced_angles = [float(angle[0]) for angle in most_common]
-    # Add the projections from the other side too
-    other_projections = [math.pi - angle for angle in reduced_angles]
-    reduced_angles.extend(other_projections)
+            if best_projection_error == -1:
+                # Handle first reconstruction
+                best_projection_error = error
+                best_projection = projection
+                continue
 
-    add_trivial_angles(reduced_angles)
+            if error < best_projection_error:
+                best_projection_error = error
+                best_projection = projection
 
-    print("total projections: " + str(len(reduced_angles)))
+        # Here we found the best projection from the random list
+        print("Best random projection error: " + str(best_projection_error))
+        error_improvement = 1
+        best_projection_iter = best_projection
+        index_of_optimized_angle = 0
+        improved_overall_error = best_projection_error
+        tried_angles = 1
 
-    reconstructed_img = make_reconstructed_image(image, reduced_angles)
-    save_image("./reconstructed/recon_image_improved.png", reconstructed_img)
+        # Greedy algorithm to improve the projection
+        while error_improvement > 0.01 and tried_angles != len(best_projection_iter):
+            print(".")
+            best_projection_iter[index_of_optimized_angle] += optimization_step_size
+            error = get_mse_from_images(image, make_reconstructed_image(image, best_projection_iter))
 
-    angle_list = make_angle_list(50)
-    reconstructed_img = make_reconstructed_image(image, angle_list)
-    save_image("./reconstructed/recon_image_reference.png", reconstructed_img)
+            # Optimization is successful
+            if error < improved_overall_error:
+                error_improvement = improved_overall_error - error
+                improved_overall_error = error
+                tried_angles = 1
+                continue
 
-def test_optimization_with_noisiness(image):
-    reconstructed_img = noisiness_based_reconstruction(image)
-    save_image("./reconstructed/recon_image_noisy_improved.png", reconstructed_img)
+            # If addition didn't work, try to substract
+            best_projection_iter[index_of_optimized_angle] -= 2 * optimization_step_size
+            error = get_mse_from_images(image, make_reconstructed_image(image, best_projection_iter))
 
-    angle_list = make_angle_list(50)
-    reconstructed_img = make_reconstructed_image(image, angle_list)
-    save_image("./reconstructed/recon_image_noisy_reference.png", reconstructed_img)
+            # Optimization is successful
+            if error < improved_overall_error:
+                error_improvement = improved_overall_error - error
+                improved_overall_error = error
+                tried_angles = 1
+                continue
 
-original_image = cv2.imread("./sample_pictures/sb_hires_rect.png", flags=cv2.IMREAD_GRAYSCALE)
+            tried_angles += 1
+            # If we tried to improve all the angles, start again
+            if index_of_optimized_angle >= len(best_projection_iter):
+                index_of_optimized_angle = 0
+            else:
+                index_of_optimized_angle += 1
+
+        print("Best optimized projection error: " + str(improved_overall_error))
+
+        # In this case, the starting number of projections is not good enough
+        if improved_overall_error > max_error_limit and number_of_projections == start_projection_count:
+            raise Exception(
+                "Reconstruction error is bigger than the limit with starting " + str(
+                    number_of_projections) + "projections. Please increase the number of the starting projection count!")
+
+        # Optimization successful, try to decrease number of projections
+        if improved_overall_error < best_projection_error and improved_overall_error < max_error_limit:
+            best_projection_error = improved_overall_error
+            best_projection = best_projection_iter
+            number_of_projections -= 1
+        else:
+            # Optimization couldn't find a better reconstruction, we give back the previous projection that was under the error limit
+            continue_optimization = False
+
+    print("Least projection achieved is " + str(len(best_projection)))
+    save_image("./reconstructed/opt_reconstruction_" + str(len(best_projection)) + ".png",
+               make_reconstructed_image(image, best_projection))
+
+
+original_image = cv2.imread("./sample_pictures/sb_hires_inv.png", flags=cv2.IMREAD_GRAYSCALE)
 # test_reconstruction(original_image)
-# test_optimized_reconstruction(original_image)
-test_optimization_with_noisiness(original_image)
+test_optimized_reconstruction(original_image)
+# test_optimization_with_noisiness(original_image)
