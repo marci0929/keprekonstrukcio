@@ -175,10 +175,10 @@ def noisiness_based_reconstruction(image):
 #     save_image("./reconstructed/recon_image_noisy_reference.png", reconstructed_img)
 
 def test_optimized_reconstruction(image):
-    start_projection_count = 60  # number of projections
+    start_projection_count = 50  # number of projections
     projection_list_number = 100  # Number of generated random projections
     max_error_limit = 1  # Error limit, which needs to be achieved
-    optimization_step_size = 0.000174532925  # 0.01 degree in radians
+    optimization_step_size = 1.74532925e-5  # 0.001 degree in radians
 
     continue_optimization = True
     best_projection_error = -1
@@ -187,7 +187,7 @@ def test_optimized_reconstruction(image):
 
     while continue_optimization:
         random_projections = np.random.uniform(0, math.pi, (number_of_projections, projection_list_number))
-        print("Testing " + str(number_of_projections) + " number of projections.\n")
+        print("Testing " + str(number_of_projections) + " number of projections.")
         print("Current best error: " + str(best_projection_error))
 
         # Testing the random projections, and selecting the best
@@ -210,19 +210,24 @@ def test_optimized_reconstruction(image):
         best_projection_iter = best_projection
         index_of_optimized_angle = 0
         improved_overall_error = best_projection_error
-        tried_angles = 1
+        tried_angles = 0
 
         # Greedy algorithm to improve the projection
-        while error_improvement > 0.01 and tried_angles != len(best_projection_iter):
-            print(".")
+        print("Greedy optimization in progress...")
+        while error_improvement > 0 and tried_angles != len(best_projection_iter):
+            print(".", end = " ")
             best_projection_iter[index_of_optimized_angle] += optimization_step_size
             error = get_mse_from_images(image, make_reconstructed_image(image, best_projection_iter))
+
+            if improved_overall_error < best_projection_error and improved_overall_error < max_error_limit:
+                # We found a projection which is better than the previous best, and is under the limit
+                break
 
             # Optimization is successful
             if error < improved_overall_error:
                 error_improvement = improved_overall_error - error
                 improved_overall_error = error
-                tried_angles = 1
+                tried_angles = 0
                 continue
 
             # If addition didn't work, try to substract
@@ -233,12 +238,12 @@ def test_optimized_reconstruction(image):
             if error < improved_overall_error:
                 error_improvement = improved_overall_error - error
                 improved_overall_error = error
-                tried_angles = 1
+                tried_angles = 0
                 continue
 
             tried_angles += 1
             # If we tried to improve all the angles, start again
-            if index_of_optimized_angle >= len(best_projection_iter):
+            if index_of_optimized_angle == len(best_projection_iter) - 1 :
                 index_of_optimized_angle = 0
             else:
                 index_of_optimized_angle += 1
@@ -260,8 +265,8 @@ def test_optimized_reconstruction(image):
             # Optimization couldn't find a better reconstruction, we give back the previous projection that was under the error limit
             continue_optimization = False
 
-    print("Least projection achieved is " + str(len(best_projection)))
-    save_image("./reconstructed/opt_reconstruction_" + str(len(best_projection)) + ".png",
+    print("Least projection achieved is " + number_of_projections)
+    save_image("./reconstructed/opt_reconstruction_" + number_of_projections + ".png",
                make_reconstructed_image(image, best_projection))
 
 
