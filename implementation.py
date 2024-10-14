@@ -175,10 +175,10 @@ def noisiness_based_reconstruction(image):
 #     save_image("./reconstructed/recon_image_noisy_reference.png", reconstructed_img)
 
 def test_optimized_reconstruction(image):
-    start_projection_count = 40  # number of projections
-    number_of_random_projections = 200  # Number of generated random projections
-    max_error_limit = 0.5  # Error limit, which needs to be achieved
-    optimization_step_size = 1.74532925e-5  # 0.001 degree in radians
+    start_projection_count = 60  # number of projections
+    number_of_random_projections = 300  # Number of generated random projections
+    max_error_limit = 0.35  # Error limit, which needs to be achieved
+    optimization_step_size = 1.74532925e-10  # 0.001 degree in radians
 
     continue_optimization = True
     number_of_projections = start_projection_count
@@ -218,14 +218,14 @@ def test_optimized_reconstruction(image):
             continue
 
         error_improvement = 1
-        best_projection_iter = best_projection
+        best_projection_iter = best_projection[:]
         index_of_optimized_angle = 0
         improved_overall_error = best_projection_error
         tried_angles = 0
 
         # Greedy algorithm to improve the projection
         print("Greedy optimization in progress...")
-        while error_improvement > 0 and tried_angles != len(best_projection_iter):
+        while tried_angles != len(best_projection_iter):
             print(".", end = " ")
             best_projection_iter[index_of_optimized_angle] += optimization_step_size
             error = get_mse_from_images(image, make_reconstructed_image(image, best_projection_iter))
@@ -236,7 +236,6 @@ def test_optimized_reconstruction(image):
 
             # Optimization is successful
             if error < improved_overall_error:
-                error_improvement = improved_overall_error - error
                 improved_overall_error = error
                 tried_angles = 0
                 continue
@@ -247,11 +246,11 @@ def test_optimized_reconstruction(image):
 
             # Optimization is successful
             if error < improved_overall_error:
-                error_improvement = improved_overall_error - error
                 improved_overall_error = error
                 tried_angles = 0
                 continue
 
+            best_projection_iter[index_of_optimized_angle] += optimization_step_size
             tried_angles += 1
             # If we tried to improve all the angles, start again
             if index_of_optimized_angle == len(best_projection_iter) - 1 :
