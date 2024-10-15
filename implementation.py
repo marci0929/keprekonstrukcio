@@ -178,11 +178,11 @@ def test_optimization(image, equal_projection_count):
     save_image("./reconstructed/opt_recon_" + str(best_rec_proj_cnt) + ".png", best_rec)
 
 
-def print_greedy_opt_progress():
+def print_greedy_opt_progress(break_size):
     global greedy_progress
     print(".", end=" ")
     greedy_progress += 1
-    if greedy_progress == 30:
+    if greedy_progress == break_size:
         print("\n")
         greedy_progress = 0
 
@@ -251,7 +251,7 @@ def optimized_reconstruction(image, max_error_limit):
                 best_projection = np.copy(best_projection_iter)
                 break
 
-            print_greedy_opt_progress()
+            print_greedy_opt_progress(number_of_projections)
 
             saved_angle = best_projection_iter[index_of_optimized_angle]
             best_projection_iter[index_of_optimized_angle] += current_step_size
