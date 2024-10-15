@@ -188,8 +188,8 @@ def print_greedy_opt_progress(break_size):
 
 
 def optimized_reconstruction(image, max_error_limit):
-    start_projection_count = 60  # number of projections
-    number_of_random_projections = 200  # Number of generated random projections
+    start_projection_count = 20  # number of projections
+    number_of_random_projections = 300  # Number of generated random projections
     # max_error_limit = 0.35  # Error limit, which needs to be achieved
     optimization_step_size = 1e-16  # Number to add and subtract from angles
 
@@ -285,10 +285,10 @@ def optimized_reconstruction(image, max_error_limit):
             index_of_optimized_angle += 1
 
             # Optimization couldn't find a better reconstruction, try bigger step size if possible, let's see
-            if tried_angles == number_of_projections and current_step_size < 0.1:
+            if tried_angles == number_of_projections and current_step_size < (math.pi/2):
                 tried_angles = 0
                 index_of_optimized_angle = 0
-                current_step_size *= 2
+                current_step_size *= 1.1
 
             # If we tried to improve all the angles, start again
             if index_of_optimized_angle == number_of_projections:
@@ -318,8 +318,8 @@ def optimized_reconstruction(image, max_error_limit):
     return best_reconstruction, number_of_projections+1, best_random_projection_error
 
 
-original_image = cv2.imread("./sample_pictures/sb_hires_inv.png", flags=cv2.IMREAD_GRAYSCALE)
+original_image = cv2.imread("./sample_pictures/batman_bin_lowres.png", flags=cv2.IMREAD_GRAYSCALE)
 # test_reconstruction(original_image)
 # optimized_reconstruction(original_image, 0.35)
 # test_optimization_with_noisiness(original_image)
-test_optimization(original_image, 60)
+test_optimization(original_image, 20)
