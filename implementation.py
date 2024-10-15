@@ -254,28 +254,30 @@ def optimized_reconstruction(image, max_error_limit):
             print_greedy_opt_progress(number_of_projections)
 
             saved_angle = best_projection_iter[index_of_optimized_angle]
-            best_projection_iter[index_of_optimized_angle] += current_step_size
-            error = get_error_from_images(image, make_reconstructed_image(image, best_projection_iter))
+            if best_projection_iter[index_of_optimized_angle] + current_step_size < math.pi:
+                best_projection_iter[index_of_optimized_angle] += current_step_size
+                error = get_error_from_images(image, make_reconstructed_image(image, best_projection_iter))
 
-            # Optimization is successful
-            if error < improved_overall_error:
-                improved_overall_error = error
-                tried_angles = 0
-                current_step_size = optimization_step_size
-                print("!", end=" ")
-                continue
+                # Optimization is successful
+                if error < improved_overall_error:
+                    improved_overall_error = error
+                    tried_angles = 0
+                    current_step_size = optimization_step_size
+                    print("!", end=" ")
+                    continue
 
             # If addition didn't work, try to subtract
-            best_projection_iter[index_of_optimized_angle] -= 2 * current_step_size
-            error = get_error_from_images(image, make_reconstructed_image(image, best_projection_iter))
+            if best_projection_iter[index_of_optimized_angle] - 2 * current_step_size >= 0:
+                best_projection_iter[index_of_optimized_angle] -= 2 * current_step_size
+                error = get_error_from_images(image, make_reconstructed_image(image, best_projection_iter))
 
-            # Optimization is successful
-            if error < improved_overall_error:
-                improved_overall_error = error
-                tried_angles = 0
-                current_step_size = optimization_step_size
-                print("!", end=" ")
-                continue
+                # Optimization is successful
+                if error < improved_overall_error:
+                    improved_overall_error = error
+                    tried_angles = 0
+                    current_step_size = optimization_step_size
+                    print("!", end=" ")
+                    continue
 
             # Optimization unsuccessful for this angle, try another one
             best_projection_iter[index_of_optimized_angle] = saved_angle
@@ -284,6 +286,7 @@ def optimized_reconstruction(image, max_error_limit):
 
             # Optimization couldn't find a better reconstruction, try bigger step size if possible, let's see
             if tried_angles == number_of_projections and current_step_size < 0.1:
+                print("+", end=" ")
                 tried_angles = 0
                 index_of_optimized_angle = 0
                 current_step_size *= 10
