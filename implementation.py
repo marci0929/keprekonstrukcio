@@ -211,7 +211,7 @@ def optimized_reconstruction(image, max_error_limit):
         for projection in random_projections:
             error = get_error_from_images(image, make_reconstructed_image(image, projection))
 
-            if error < max_error_limit:
+            if error <= max_error_limit:
                 # Error is already under the limit
                 best_random_projection_error = error
                 best_projection = projection
@@ -229,7 +229,7 @@ def optimized_reconstruction(image, max_error_limit):
 
         # Here we found the best projection from the random list
         print("Best random projection error: " + str(best_random_projection_error))
-        if best_random_projection_error < max_error_limit:
+        if best_random_projection_error <= max_error_limit:
             # We found a projection which is under the limit
             number_of_projections -= 1
             continue
@@ -246,7 +246,7 @@ def optimized_reconstruction(image, max_error_limit):
         # Greedy algorithm to improve the projection
         print("Greedy optimization in progress...")
         while tried_angles != number_of_projections:
-            if improved_overall_error < max_error_limit:
+            if improved_overall_error <= max_error_limit:
                 # We found a projection which is under the limit
                 best_projection = np.copy(best_projection_iter)
                 break
@@ -286,10 +286,9 @@ def optimized_reconstruction(image, max_error_limit):
 
             # Optimization couldn't find a better reconstruction, try bigger step size if possible, let's see
             if tried_angles == number_of_projections and current_step_size < 0.1:
-                print("+", end=" ")
                 tried_angles = 0
                 index_of_optimized_angle = 0
-                current_step_size *= 10
+                current_step_size *= 2
 
             # If we tried to improve all the angles, start again
             if index_of_optimized_angle == number_of_projections:
@@ -304,7 +303,7 @@ def optimized_reconstruction(image, max_error_limit):
                     number_of_projections) + "projections. Please increase the number of the starting projection count!")
 
         # Optimization successful, try to decrease number of projections
-        if improved_overall_error < max_error_limit:
+        if improved_overall_error <= max_error_limit:
             best_projection = np.copy(best_projection_iter)
             number_of_projections -= 1
         else:
