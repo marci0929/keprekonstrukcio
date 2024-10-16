@@ -81,7 +81,6 @@ def optimized_reconstruction(image, max_error_limit):
     number_of_projections = start_projection_count
     continue_optimization = True
     best_overall_projection = []
-    current_step_size = optimization_step_size
     best_overall_error = max_error_limit + 1
 
     while continue_optimization:
@@ -114,6 +113,7 @@ def optimized_reconstruction(image, max_error_limit):
             greedy_projection_iter = np.copy(projection)
             index_of_optimized_angle = 0
             tried_angles = 0
+            current_step_size = optimization_step_size
 
             # Greedy algorithm to improve the projection
             while tried_angles != number_of_projections:
