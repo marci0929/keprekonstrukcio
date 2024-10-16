@@ -29,65 +29,8 @@ def save_image(path, image):
 
 
 def print_progress(progress):
-    if progress % 5 == 0:
+    if progress % 2 == 0:
         print("Progress: " + str(progress))
-
-
-# Check if the corners of the search box is a switching component
-# The box is defined as the following:
-# a ---- b
-# |      |
-# c ---- d
-def check_if_switching_component(a, b, c, d):
-    return a == d and c == b and a != b
-
-
-def get_normalized_angle_from_2_coordinates(coord1, coord2):
-    delta_x = abs(coord2[0] - coord1[0])
-    delta_y = abs(coord2[1] - coord1[1])
-    return math.atan2(delta_x, delta_y)
-
-
-def get_search_box_values(image, values_list, x_offset, y_offset):
-    image_size = image.shape[0]
-
-    for y in range(image_size - y_offset):
-        for x in range(image_size - x_offset):
-            is_switching_component = check_if_switching_component(image[y][x], image[y][x + x_offset],
-                                                                  image[y + y_offset][x],
-                                                                  image[y + y_offset][x + x_offset])
-            if is_switching_component:
-                values_list.append(((x, y), (x + x_offset, y + y_offset)))
-
-
-def get_list_of_switching_components(image):
-    x_search_offset = 1
-    y_search_offset = 1
-
-    image_size = image.shape[0]
-
-    # Contains the switching component coordinates in (x, y) form in 4 element tuples as follows:
-    # a ---- b
-    # |      |
-    # c ---- d
-    # (a, b, c, d)
-    values_list = []
-
-    while x_search_offset != image_size:
-        get_search_box_values(image, values_list, x_search_offset, y_search_offset)
-        x_search_offset += 1
-        if x_search_offset != image_size:
-            get_search_box_values(image, values_list, x_search_offset, y_search_offset)
-
-        x_search_offset -= 1
-        y_search_offset += 1
-
-        if y_search_offset != image_size:
-            get_search_box_values(image, values_list, x_search_offset, y_search_offset)
-
-        x_search_offset += 1
-
-    return values_list
 
 
 def test_reconstruction(image):
@@ -106,63 +49,6 @@ def test_reconstruction(image):
     plt.plot(test_projections, mae_list)
     plt.show()
 
-
-def add_trivial_angles(angle_list):
-    angle_list.append(0.0)
-    angle_list.append(math.pi / 2)
-
-
-def get_noisiness_of_signal(sinogram_row):
-    noise_value = 0
-    for value_idx in range(1, len(sinogram_row)):
-        noise_value += abs(sinogram_row[value_idx] - sinogram_row[value_idx - 1])
-
-    return noise_value
-
-
-def get_noisiness_of_sinogram(sinogram):
-    row_count = 0
-    row_noise = {}
-    for sinogram_row in sinogram:
-        row_noise[row_count] = get_noisiness_of_signal(sinogram_row)
-        row_count += 1
-
-    return row_noise
-
-
-def get_improved_sinogram_based_on_noise(sinogram, sinogram_variance):
-    # Get the 50 highest noise sinogram rows
-    sorted_row_variances = {key: sinogram_variance[key] for key in
-                            sorted(sinogram_variance, key=sinogram_variance.get, reverse=True)[:50]}
-    new_sinogram = np.array(sinogram[0])
-    new_angles = []
-
-    # Append the rows of the original sinogram which has the most noise
-    for angle in sorted_row_variances:
-        new_sinogram = np.vstack((sinogram[angle], new_sinogram))
-        new_angles.insert(0, math.radians(angle))
-
-    # Delete the first dummy row
-    new_sinogram = np.delete(new_sinogram, len(new_sinogram) - 1, 0)
-    return new_sinogram, new_angles
-
-
-def noisiness_based_reconstruction(image):
-    sinogram = make_sinogram(image, make_angle_list(360))
-    sinogram_variance = get_noisiness_of_sinogram(sinogram)
-    improved_sinogram, reduced_angles = get_improved_sinogram_based_on_noise(sinogram, sinogram_variance)
-    fbp_reconstructed = fbp_reconstruction(improved_sinogram, image.shape[0] / 2, reduced_angles, apply_log=False,
-                                           gpu=False)
-    return cv2.threshold(fbp_reconstructed, 127, 255, cv2.THRESH_BINARY)[1]
-
-
-# def test_optimization_with_noisiness(image):
-#     reconstructed_img = noisiness_based_reconstruction(image)
-#     save_image("./reconstructed/recon_image_noisy_improved.png", reconstructed_img)
-#
-#     angle_list = make_angle_list(50)
-#     reconstructed_img = make_reconstructed_image(image, angle_list)
-#     save_image("./reconstructed/recon_image_noisy_reference.png", reconstructed_img)
 
 def test_optimization(image, equal_projection_count):
     equal_angle_reconstructed = make_reconstructed_image(image, make_angle_list(equal_projection_count))
@@ -189,42 +75,42 @@ def print_greedy_opt_progress(break_size):
 
 def optimized_reconstruction(image, max_error_limit):
     start_projection_count = 20  # number of projections
-    number_of_random_projections = 50  # Number of generated random projections
-    # max_error_limit = 0.35  # Error limit, which needs to be achieved
-    optimization_step_size = 1e-12  # Number to add and subtract from angles
+    number_of_random_projections = 10  # Number of generated random projections
+    optimization_step_size = 1e-16  # Number to add and subtract from angles
 
     number_of_projections = start_projection_count
     continue_optimization = True
-    best_projection = []
+    best_overall_projection = []
     current_step_size = optimization_step_size
-    best_overall_error = -1
+    best_overall_error = max_error_limit + 1
 
     while continue_optimization:
-        random_projections = rng.uniform(0, math.pi, (number_of_random_projections, number_of_projections))
+        random_projections = make_angle_list(number_of_projections)
         # Add the uniform angle list, it can be better sometimes
-        random_projections = np.vstack([random_projections, make_angle_list(number_of_projections)])
+        random_projections = np.vstack(
+            [random_projections, rng.uniform(0, math.pi,
+                                             (number_of_random_projections, number_of_projections))])
         print("Testing " + str(number_of_projections) + " projections.")
 
-        best_current_error = get_error_from_images(image, make_reconstructed_image(image, random_projections[0]))
+        best_current_projection_number_error = \
+            (get_error_from_images(image, make_reconstructed_image(image, random_projections[0])))
 
         # Testing the random projections, and selecting the best one
         for projection in random_projections:
-            error = get_error_from_images(image, make_reconstructed_image(image, projection))
+            greedy_best_error = get_error_from_images(image, make_reconstructed_image(image, projection))
 
             # Here we found the best projection from the random list
-            if error <= max_error_limit:
+            if greedy_best_error <= max_error_limit:
                 # We found a projection which is under the limit
-                best_projection = projection
-                best_current_error = error
+                best_overall_projection = projection
+                best_current_projection_number_error = greedy_best_error
                 break
-
-
 
             # Only to show the correct progress
             global greedy_progress
             greedy_progress = 0
+            # -----
 
-            greedy_best_error = error
             greedy_projection_iter = np.copy(projection)
             index_of_optimized_angle = 0
             tried_angles = 0
@@ -233,8 +119,8 @@ def optimized_reconstruction(image, max_error_limit):
             while tried_angles != number_of_projections:
                 if greedy_best_error <= max_error_limit:
                     # We found a projection which is under the limit
-                    best_projection = np.copy(greedy_projection_iter)
-                    best_current_error = greedy_best_error
+                    best_overall_projection = np.copy(greedy_projection_iter)
+                    best_current_projection_number_error = greedy_best_error
                     break
 
                 print_greedy_opt_progress(number_of_projections)
@@ -275,41 +161,45 @@ def optimized_reconstruction(image, max_error_limit):
                     index_of_optimized_angle = 0
 
                 # Optimization couldn't find a better reconstruction, try bigger step size if possible, let's see
-                if tried_angles == number_of_projections and current_step_size < (math.pi/2):
+                if tried_angles == number_of_projections and current_step_size < (math.pi / 2):
                     tried_angles = 0
                     index_of_optimized_angle = 0
                     current_step_size *= 10
 
             # Greedy found a good projection set
-            if best_current_error <= max_error_limit:
+            if best_current_projection_number_error <= max_error_limit:
                 # We found a projection which is under the limit
                 break
+            else:
+                print("Optimized random projection best error: " + str(best_current_projection_number_error))
 
-        print("\nBest optimized projection error: " + str(best_current_error))
+        print("\nBest optimized projection error: " + str(best_current_projection_number_error))
 
         # In this case, the starting number of projections is not enough even on the start
-        if best_current_error > max_error_limit and number_of_projections == start_projection_count:
-            raise Exception(
+        if best_current_projection_number_error > max_error_limit and number_of_projections == start_projection_count:
+            raise RuntimeError(
                 "Reconstruction error is bigger than the limit with starting " + str(
-                    number_of_projections) + "projections. Please increase the number of the starting projection count!")
+                    number_of_projections) + "projections. Please increase the number"
+                                             " of the starting projection count!")
 
         # Optimization successful, try to decrease number of projections
-        if best_current_error <= max_error_limit:
-            best_overall_error = best_current_error
+        if best_current_projection_number_error <= max_error_limit:
+            best_overall_error = best_current_projection_number_error
             number_of_projections -= 1
         else:
-            # Optimization couldn't find a better reconstruction, we give back the previous projection that was under the error limit
+            # Optimization couldn't find a better reconstruction, we give back the previous projection
+            # that was under the error limit
             continue_optimization = False
 
-    print("Least projection achieved is " + str(number_of_projections+1))
-    best_reconstruction = make_reconstructed_image(image, best_projection)
-    save_image("./reconstructed/opt_reconstruction_" + str(number_of_projections+1) + ".png", best_reconstruction)
+    print("Least projection achieved is " + str(number_of_projections + 1))
+    best_reconstruction = make_reconstructed_image(image, best_overall_projection)
+    save_image("./reconstructed/opt_reconstruction_" + str(number_of_projections + 1) + ".png", best_reconstruction)
 
-    return best_reconstruction, number_of_projections+1, best_overall_error
+    return best_reconstruction, number_of_projections + 1, best_overall_error
 
 
 original_image = cv2.imread("./sample_pictures/batman_bin_lowres.png", flags=cv2.IMREAD_GRAYSCALE)
+
 # test_reconstruction(original_image)
 # optimized_reconstruction(original_image, 0.35)
-# test_optimization_with_noisiness(original_image)
 test_optimization(original_image, 20)
