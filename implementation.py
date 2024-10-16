@@ -7,7 +7,10 @@ from algotom.rec.reconstruction import fbp_reconstruction
 from algotom.util.simulation import make_sinogram
 
 rng = np.random.default_rng()
-greedy_progress = 0
+user_optimization_step_size = 1e-16
+step_multiplier = 10
+number_of_generated_random_projections = 10
+
 
 
 def make_angle_list(number_of_projections):
@@ -56,13 +59,16 @@ def test_optimization(image, equal_projection_count):
     save_image("./reconstructed/equal_reconst_" + str(equal_projection_count) + ".png", equal_angle_reconstructed)
     print("Equal angle reconstruction error is: " + str(equal_angles_error))
 
-    best_rec, best_rec_proj_cnt, best_rec_error = optimized_reconstruction(image, equal_angles_error)
+    best_rec, best_rec_proj_cnt, best_rec_error = (
+        optimized_reconstruction(image, equal_angles_error, equal_projection_count))
 
     print("Optimized reconstruction with same error made from " + str(
         best_rec_proj_cnt) + " projections, instead of " + str(
         equal_projection_count) + ", with error " + str(best_rec_error))
     save_image("./reconstructed/opt_recon_" + str(best_rec_proj_cnt) + ".png", best_rec)
 
+
+greedy_progress = 0
 
 def print_greedy_opt_progress(break_size):
     global greedy_progress
@@ -73,10 +79,11 @@ def print_greedy_opt_progress(break_size):
         greedy_progress = 0
 
 
-def optimized_reconstruction(image, max_error_limit):
-    start_projection_count = 20  # number of projections
-    number_of_random_projections = 10  # Number of generated random projections
-    optimization_step_size = 1e-16  # Number to add and subtract from angles
+def optimized_reconstruction(image, max_error_limit, start_projection_count):
+    global user_optimization_step_size, step_multiplier, number_of_generated_random_projections
+
+    number_of_random_projections = number_of_generated_random_projections  # Number of generated random projections
+    optimization_step_size = user_optimization_step_size  # Number to add and subtract from angles
 
     number_of_projections = start_projection_count
     continue_optimization = True
@@ -164,7 +171,7 @@ def optimized_reconstruction(image, max_error_limit):
                 if tried_angles == number_of_projections and current_step_size < (math.pi / 2):
                     tried_angles = 0
                     index_of_optimized_angle = 0
-                    current_step_size *= 10
+                    current_step_size *= step_multiplier
 
             # Greedy found a good projection set
             if best_current_projection_number_error <= max_error_limit:
@@ -201,5 +208,5 @@ def optimized_reconstruction(image, max_error_limit):
 original_image = cv2.imread("./sample_pictures/batman_bin_lowres.png", flags=cv2.IMREAD_GRAYSCALE)
 
 # test_reconstruction(original_image)
-# optimized_reconstruction(original_image, 0.35)
+# optimized_reconstruction(original_image, 0.35, 20)
 test_optimization(original_image, 20)
