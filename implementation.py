@@ -7,15 +7,11 @@ from algotom.rec.reconstruction import fbp_reconstruction
 from algotom.util.simulation import make_sinogram
 
 rng = np.random.default_rng()
-user_optimization_step_size = 1e-8
 step_multiplier = 0.01
-number_of_generated_random_projections = 10
-
-
+number_of_generated_random_projections = 2
 
 def make_angle_list(number_of_projections):
     return np.linspace(0, math.pi, number_of_projections + 1)[:-1]
-
 
 def get_error_from_images(orig, rec):
     return np.count_nonzero(rec - orig) / np.count_nonzero(orig)
@@ -25,6 +21,23 @@ def make_reconstructed_image(image, projection_angles):
     sinogram = make_sinogram(image, projection_angles)
     fbp_reconstructed = fbp_reconstruction(sinogram, image.shape[0] / 2, projection_angles, apply_log=False, gpu=False)
     return cv2.threshold(fbp_reconstructed, 127, 255, cv2.THRESH_BINARY)[1]
+
+def make_reconstructed_image_with_threshold_opt(image, projection_angles):
+    sinogram = make_sinogram(image, projection_angles)
+    fbp_reconstructed = fbp_reconstruction(sinogram, image.shape[0] / 2, projection_angles, apply_log=False, gpu=False)
+    best_error = get_error_from_images(image,
+                                       cv2.threshold(fbp_reconstructed, 127, 255, cv2.THRESH_BINARY)[1])
+    best_threshold = 127
+
+    for thresh in range(255):
+        error_iter = get_error_from_images(image,
+                                       cv2.threshold(fbp_reconstructed, thresh, 255, cv2.THRESH_BINARY)[1])
+        if error_iter < best_error:
+            best_error = error_iter
+            best_threshold = thresh
+
+
+    return cv2.threshold(fbp_reconstructed, best_threshold, 255, cv2.THRESH_BINARY)[1]
 
 
 def save_image(path, image):
@@ -60,7 +73,7 @@ def test_optimization(image, equal_projection_count):
     print("Equal angle reconstruction error is: " + str(equal_angles_error))
 
     best_rec, best_rec_proj_cnt, best_rec_error = (
-        optimized_reconstruction(image, equal_angles_error, equal_projection_count))
+        optimized_reconstruction(image, 0.02, equal_projection_count))
 
     print("Optimized reconstruction with same error made from " + str(
         best_rec_proj_cnt) + " projections, instead of " + str(
@@ -78,12 +91,15 @@ def print_greedy_opt_progress(break_size):
         print("\n")
         greedy_progress = 0
 
+def get_adjusted_step_size(iteration_number):
+    global step_multiplier
+    return step_multiplier * math.log10(iteration_number + 1)
+
 
 def optimized_reconstruction(image, max_error_limit, start_projection_count):
-    global user_optimization_step_size, step_multiplier, number_of_generated_random_projections
+    global number_of_generated_random_projections
 
     number_of_random_projections = number_of_generated_random_projections  # Number of generated random projections
-    optimization_step_size = user_optimization_step_size  # Number to add and subtract from angles
 
     number_of_projections = start_projection_count
     continue_optimization = True
@@ -99,11 +115,11 @@ def optimized_reconstruction(image, max_error_limit, start_projection_count):
         print("Testing " + str(number_of_projections) + " projections.")
 
         best_current_projection_number_error = \
-            (get_error_from_images(image, make_reconstructed_image(image, random_projections[0])))
+            (get_error_from_images(image, make_reconstructed_image_with_threshold_opt(image, random_projections[0])))
 
         # Testing the random projections, and selecting the best one
         for projection in random_projections:
-            greedy_best_error = get_error_from_images(image, make_reconstructed_image(image, projection))
+            greedy_best_error = get_error_from_images(image, make_reconstructed_image_with_threshold_opt(image, projection))
 
             # Here we found the best projection from the random list
             if greedy_best_error <= max_error_limit:
@@ -121,7 +137,7 @@ def optimized_reconstruction(image, max_error_limit, start_projection_count):
             index_of_optimized_angle = 0
             tried_angles = 0
             iter_number = 0
-            current_step_size = step_multiplier * math.log10(1)
+            current_step_size = get_adjusted_step_size(iter_number)
 
             # Greedy algorithm to improve the projection
             while tried_angles != number_of_projections:
@@ -134,14 +150,14 @@ def optimized_reconstruction(image, max_error_limit, start_projection_count):
                 saved_angle = greedy_projection_iter[index_of_optimized_angle]
                 if greedy_projection_iter[index_of_optimized_angle] + current_step_size < math.pi:
                     greedy_projection_iter[index_of_optimized_angle] += current_step_size
-                    error_1 = get_error_from_images(image, make_reconstructed_image(image, greedy_projection_iter))
+                    error_1 = get_error_from_images(image, make_reconstructed_image_with_threshold_opt(image, greedy_projection_iter))
 
                     # Optimization is successful
                     if error_1 <= greedy_best_error:
                         greedy_best_error = error_1
                         tried_angles = 0
-                        current_step_size = step_multiplier * math.log10(1)
                         iter_number = 0
+                        current_step_size = get_adjusted_step_size(iter_number)
                         print("!", end=" ")
                         greedy_progress += 1
                         continue
@@ -149,14 +165,14 @@ def optimized_reconstruction(image, max_error_limit, start_projection_count):
                 # If addition didn't work, try to subtract
                 if greedy_projection_iter[index_of_optimized_angle] - 2 * current_step_size >= 0:
                     greedy_projection_iter[index_of_optimized_angle] -= 2 * current_step_size
-                    error_1 = get_error_from_images(image, make_reconstructed_image(image, greedy_projection_iter))
+                    error_1 = get_error_from_images(image, make_reconstructed_image_with_threshold_opt(image, greedy_projection_iter))
 
                     # Optimization is successful
                     if error_1 <= greedy_best_error:
                         greedy_best_error = error_1
                         tried_angles = 0
-                        current_step_size = step_multiplier * math.log10(1)
                         iter_number = 0
+                        current_step_size = get_adjusted_step_size(iter_number)
                         print("!", end=" ")
                         greedy_progress += 1
                         continue
@@ -176,7 +192,7 @@ def optimized_reconstruction(image, max_error_limit, start_projection_count):
                     tried_angles = 0
                     index_of_optimized_angle = 0
                     iter_number += 1
-                    current_step_size = step_multiplier * math.log10(iter_number + 1)
+                    current_step_size = get_adjusted_step_size(iter_number)
 
             if tried_angles == number_of_projections:
                 print("\nGreedy couldn't find a better solution.")
@@ -200,6 +216,8 @@ def optimized_reconstruction(image, max_error_limit, start_projection_count):
         # Optimization successful, try to decrease number of projections
         if best_current_projection_number_error <= max_error_limit:
             best_overall_error = best_current_projection_number_error
+            save_image("./reconstructed/opt_iter_"+str(number_of_projections)+".png",
+                       make_reconstructed_image_with_threshold_opt(image, best_overall_projection) )
             number_of_projections -= 1
         else:
             # Optimization couldn't find a better reconstruction, we give back the previous projection
@@ -207,7 +225,7 @@ def optimized_reconstruction(image, max_error_limit, start_projection_count):
             continue_optimization = False
 
     print("Least projection achieved is " + str(number_of_projections + 1))
-    best_reconstruction = make_reconstructed_image(image, best_overall_projection)
+    best_reconstruction = make_reconstructed_image_with_threshold_opt(image, best_overall_projection)
     save_image("./reconstructed/opt_reconstruction_" + str(number_of_projections + 1) + ".png", best_reconstruction)
 
     return best_reconstruction, number_of_projections + 1, best_overall_error
@@ -217,4 +235,4 @@ original_image = cv2.imread("./sample_pictures/batman_bin_lowres.png", flags=cv2
 
 # test_reconstruction(original_image)
 # optimized_reconstruction(original_image, 0.35, 20)
-test_optimization(original_image, 20)
+test_optimization(original_image, 60)
