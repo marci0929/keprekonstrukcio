@@ -7,8 +7,8 @@ from algotom.rec.reconstruction import fbp_reconstruction
 from algotom.util.simulation import make_sinogram
 
 rng = np.random.default_rng()
-user_optimization_step_size = 1e-16
-step_multiplier = 10
+user_optimization_step_size = 1e-8
+step_multiplier = 0.01
 number_of_generated_random_projections = 10
 
 
@@ -74,7 +74,7 @@ def print_greedy_opt_progress(break_size):
     global greedy_progress
     print(".", end=" ")
     greedy_progress += 1
-    if greedy_progress == break_size:
+    if greedy_progress >= break_size:
         print("\n")
         greedy_progress = 0
 
@@ -120,7 +120,8 @@ def optimized_reconstruction(image, max_error_limit, start_projection_count):
             greedy_projection_iter = np.copy(projection)
             index_of_optimized_angle = 0
             tried_angles = 0
-            current_step_size = optimization_step_size
+            iter_number = 0
+            current_step_size = step_multiplier * math.log10(1)
 
             # Greedy algorithm to improve the projection
             while tried_angles != number_of_projections:
@@ -129,8 +130,6 @@ def optimized_reconstruction(image, max_error_limit, start_projection_count):
                     best_overall_projection = np.copy(greedy_projection_iter)
                     best_current_projection_number_error = greedy_best_error
                     break
-
-                print_greedy_opt_progress(number_of_projections)
 
                 saved_angle = greedy_projection_iter[index_of_optimized_angle]
                 if greedy_projection_iter[index_of_optimized_angle] + current_step_size < math.pi:
@@ -141,8 +140,10 @@ def optimized_reconstruction(image, max_error_limit, start_projection_count):
                     if error_1 <= greedy_best_error:
                         greedy_best_error = error_1
                         tried_angles = 0
-                        current_step_size = optimization_step_size
+                        current_step_size = step_multiplier * math.log10(1)
+                        iter_number = 0
                         print("!", end=" ")
+                        greedy_progress += 1
                         continue
 
                 # If addition didn't work, try to subtract
@@ -154,24 +155,28 @@ def optimized_reconstruction(image, max_error_limit, start_projection_count):
                     if error_1 <= greedy_best_error:
                         greedy_best_error = error_1
                         tried_angles = 0
-                        current_step_size = optimization_step_size
+                        current_step_size = step_multiplier * math.log10(1)
+                        iter_number = 0
                         print("!", end=" ")
+                        greedy_progress += 1
                         continue
 
                 # Optimization unsuccessful for this angle, try another one
                 greedy_projection_iter[index_of_optimized_angle] = saved_angle
                 tried_angles += 1
                 index_of_optimized_angle += 1
+                print_greedy_opt_progress(number_of_projections)
 
                 # If we tried to improve all the angles, start again
                 if index_of_optimized_angle == number_of_projections:
                     index_of_optimized_angle = 0
 
                 # Optimization couldn't find a better reconstruction, try bigger step size if possible, let's see
-                if tried_angles == number_of_projections and current_step_size < (math.pi / 2):
+                if tried_angles == number_of_projections and current_step_size < math.pi:
                     tried_angles = 0
                     index_of_optimized_angle = 0
-                    current_step_size *= step_multiplier
+                    iter_number += 1
+                    current_step_size = step_multiplier * math.log10(iter_number + 1)
 
             if tried_angles == number_of_projections:
                 print("\nGreedy couldn't find a better solution.")
