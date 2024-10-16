@@ -173,12 +173,15 @@ def optimized_reconstruction(image, max_error_limit, start_projection_count):
                     index_of_optimized_angle = 0
                     current_step_size *= step_multiplier
 
+            if tried_angles == number_of_projections:
+                print("\nGreedy couldn't find a better solution.")
+
             # Greedy found a good projection set
             if best_current_projection_number_error <= max_error_limit:
                 # We found a projection which is under the limit
                 break
             else:
-                print("Optimized random projection best error: " + str(best_current_projection_number_error))
+                print("\nOptimized random projection best error: " + str(best_current_projection_number_error))
 
         print("\nBest optimized projection error: " + str(best_current_projection_number_error))
 
